@@ -12,9 +12,9 @@ Todas as mensagens seguem o formato:
 
 | Tipo | Quando | `data` |
 |---|---|---|
-| `ORDER_ACCEPTED` | ordem validada e registrada | `order_id`, `user_id`, `ticker`, `side`, `quanty`, `price` |
+| `ORDER_ACCEPTED` | ordem validada e registrada | `order_id`, `user_id`, `ticker`, `side`, `quantity`, `price` |
 | `ORDER_REJECTED` | ordem recusada | `order_id`, `user_id`, `reason` |
-| `BOOK_UPDATED` | livro de ofertas mudou | `ticker`, `buy_orders` [{`price`, `quanty`}], `sell_orders` [{`price`, `quanty`}] |
+| `BOOK_UPDATED` | livro de ofertas mudou | `ticker`, `buy_orders` [{`price`, `quantity`}], `sell_orders` [{`price`, `quantity`}] |
 | `PRICE_UPDATED` | preço de um ativo mudou | `ticker`, `price`, `change_percent` |
 
 - `side`: `"BUY"` ou `"SELL"`.
@@ -27,7 +27,7 @@ Todas as mensagens seguem o formato:
 {
   "type": "PRICE_UPDATED",
   "timestamp": "2026-10-21T14:30:00Z",
-  "data": { "ticker": "PETR4", "price": 38.42, "change_pct": 1.25 }
+  "data": { "ticker": "PETR4", "price": 38.42, "change_percent": 1.25 }
 }
 ```
 
