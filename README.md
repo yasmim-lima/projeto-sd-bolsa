@@ -11,7 +11,7 @@ Simulação distribuída de um mercado financeiro: vários investidores conectad
 |---|---|
 | _nome_ | Autenticação, persistência e setup base |
 | _nome_ | Regras de negócio, ordens e bot (NPC) |
-| Filipe de Carvalho Godoy | Eventos em tempo real e tolerância a falhas |
+| _nome_ | Eventos em tempo real e tolerância a falhas |
 | _nome_ | Frontend (Home Broker) e apresentação |
 
 ## Tecnologias
@@ -60,5 +60,5 @@ _Em construção._
 
 ## Status
 
-- **Parte 1 (21/10/2026):** protótipo — login, ativos, envio de ordens e atualização em tempo real
-- **Parte 2 (30/11/2026):** matching engine, persistência, agentes, tolerância a falhas, testes de carga
+- **Parte 1 (21/10/2026):**
+- **Parte 2 (30/11/2026):**
