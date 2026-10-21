@@ -109,16 +109,37 @@ function App() {
   // Tela de Login
   if (!isLoggedIn) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#1e293b' }}>
-        <form onSubmit={handleLogin} style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', width: '350px' }}>
-          <h1 style={{ textAlign: 'center', marginBottom: '30px', color: '#0f172a', fontSize: '24px' }}>📈 SD Investimentos</h1>
-          
-          <label style={{ marginBottom: '8px', color: '#475569', fontWeight: 'bold', fontSize: '14px' }}>Usuário</label>
-          <input type="text" required maxLength={60} disabled={busy} value={username} onChange={(e) => setUsername(e.target.value)} style={{ padding: '12px', marginBottom: '20px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '16px' }} placeholder="Digite seu usuário" />
-          
-          <p>Conta de demonstração: use um nome para entrar. Não há senha nesta etapa. O estado é reiniciado com o servidor.</p>
-          {error && <p role="alert" style={{ color: '#b91c1c' }}>{error}</p>}
-          <button type="submit" disabled={busy} style={{ padding: '14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', transition: '0.2s' }}>{busy ? 'Conectando...' : 'Acessar demonstração'}</button>
+      <div className="login-page">
+        <form onSubmit={handleLogin} className="login-card">
+          <div className="login-brand">
+            <h1 className="login-title">📈 SD Investimentos</h1>
+            <p className="login-subtitle">Simulador de bolsa multiplayer</p>
+          </div>
+
+          <label htmlFor="login-username" className="login-label">Nome de investidor</label>
+          <input
+            id="login-username"
+            className="login-input"
+            type="text"
+            required
+            maxLength={60}
+            autoFocus
+            autoComplete="username"
+            disabled={busy}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Ex.: Filipe"
+          />
+
+          {error && <p role="alert" className="login-error">{error}</p>}
+
+          <button type="submit" disabled={busy || !username.trim()} className="login-button">
+            {busy ? 'Conectando...' : 'Entrar no mercado'}
+          </button>
+
+          <p className="login-hint">
+            Modo demonstração: entre só com um nome. Saldo inicial de R$ 1.000,00.
+          </p>
         </form>
       </div>
     );
