@@ -52,13 +52,18 @@ O projeto foi construído utilizando uma arquitetura cliente-servidor com as seg
 
 ## 📁 Estrutura do Repositório
 
+```text
 projeto-sd-bolsa/
 ├── backend/        # Código da API, WebSocket e bots
 ├── frontend/       # Código da interface (Home Broker)
 └── docs/           # Documentação técnica (ex: API.md)
-🚀 Como Executar o Projeto
-1. Backend (API)
-bash
+````
+
+---
+
+## 🚀 Como Executar o Projeto
+## 1. Backend (API)
+```text
 # Entre na pasta do backend
 cd backend
 
@@ -76,10 +81,13 @@ pip install -r requirements.txt
 
 # Rode o servidor
 uvicorn main:app --reload
+```
 📚 Documentação da API (Swagger): Acesse http://127.0.0.1:8000/docs com o servidor rodando.
 
-2. Frontend (Home Broker)
-bash
+---
+
+## 2. Frontend (Home Broker)
+```text
 # Em outro terminal, entre na pasta do frontend
 cd frontend
 
@@ -88,23 +96,33 @@ npm install
 
 # Rode a interface
 npm run dev
+```
 💻 Acesse o Home Broker: http://localhost:5173
 
-📑 Documentação Adicional
+---
+
+## 📑 Documentação Adicional
 📄 Especificação da API e Eventos WebSocket (em construção)
 
-📌 Status do Projeto
-✅ Parte 1: Protótipo (Entrega em 21/10/2026)
-☑ Conexão de múltiplos clientes (Frontend)
-☑ Interface do Home Broker (React + Vite)
-☑ Simulação de mercado em tempo real (Oscilação de preços)
-☑ Envio de ordens de compra e venda com validação de saldo e carteira
-☑ Cálculo de patrimônio e mini-gráficos de variação
-☑ Especificação inicial da API e WebSocket
-⏳ Parte 2: Implementação Avançada (Entrega em 30/11/2026)
-□ Matching Engine real (cruzamento de ordens)
-□ Agentes automatizados (Bots/NPCs)
-□ Persistência robusta de estado
-□ Tolerância a falhas e reconexão de clientes
-□ Testes de carga e concorrência
-<div align="center"> <i>Desenvolvido para a avaliação da disciplina de Sistemas Distribuídos - UFS.</i> </div> ```
+---
+
+## 📌 Status do Projeto
+
+### ✅ Parte 1: Protótipo (Entrega em 21/10/2026)
+
+- [x] Conexão de múltiplos clientes (Frontend)
+- [x] Interface do Home Broker (React + Vite)
+- [x] Simulação de mercado em tempo real (Oscilação de preços)
+- [x] Envio de ordens de compra e venda com validação de saldo e carteira
+- [x] Cálculo de patrimônio e mini-gráficos de variação
+- [x] Especificação inicial da API e WebSocket
+
+### ⏳ Parte 2: Implementação Avançada (Entrega em 30/11/2026)
+
+- [ ] Matching Engine real (cruzamento de ordens)
+- [ ] Agentes automatizados (Bots/NPCs)
+- [ ] Persistência robusta de estado
+- [ ] Tolerância a falhas e reconexão de clientes
+- [ ] Testes de carga e concorrência
+
+<div align="center"> <i></i> </div>
