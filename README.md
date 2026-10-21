@@ -106,6 +106,15 @@ npm run dev
 ## 📑 Documentação Adicional
 📄 Especificação da API e Eventos WebSocket (em construção)
 
+- [Ordens do protótipo: execução, contrato REST e roteiro de apresentação](docs/PROTOTIPO_ORDENS.md)
+- [Revisão dos campos do contrato WebSocket](docs/REVISAO_API.md)
+
+O protótipo de ordens usa contas de demonstração por nome, sem senha, e estado
+em memória no backend. Execute um único processo do servidor. As compras e
+vendas têm execução imediata simulada; as cotações são compartilhadas e a tela
+consulta o estado a cada três segundos. Reiniciar o backend apaga os dados.
+Autenticação JWT, persistência e WebSocket ainda precisam de integração.
+
 ---
 
 ## 📌 Status do Projeto

@@ -1,147 +1,145 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
+async function api(path, token, body, signal) {
+  const response = await fetch(`/api${path}`, {
+    method: body ? 'POST' : 'GET',
+    headers: {
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal,
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const detail = typeof data.detail === 'string' ? data.detail : 'Confira os campos informados.';
+    throw new Error(detail);
+  }
+  return data;
+}
+
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [token, setToken] = useState('');
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-
-  // Estados do Mercado (Adicionado 'precoAbertura' e corrigido a variação)
-  const [saldo, setSaldo] = useState(1000.00);
-  const [carteira, setCarteira] = useState({ PETR4: 0, VALE3: 0, ITUB4: 0 });
-  
-  const [ativos, setAtivos] = useState([
-    { ticker: 'PETR4', nome: 'Petrobras', preco: 38.50, precoAbertura: 38.50, historico: [38.40, 38.45, 38.50] },
-    { ticker: 'VALE3', nome: 'Vale', preco: 65.20, precoAbertura: 65.20, historico: [65.50, 65.30, 65.20] },
-    { ticker: 'ITUB4', nome: 'Itaú', preco: 32.10, precoAbertura: 32.10, historico: [31.90, 32.00, 32.10] },
-  ]);
-  const [ordens, setOrdens] = useState([]);
-
-  // Estados do Formulário
+  const [state, setState] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [syncError, setSyncError] = useState('');
+  const isLoggedIn = Boolean(token && state);
+  const saldo = Number(state?.balance ?? 0);
+  const carteira = state?.positions ?? {};
+  const ativos = (state?.assets ?? []).map(asset => ({
+    ticker: asset.ticker, nome: asset.name, preco: Number(asset.price),
+    precoAbertura: Number(asset.opening_price), historico: asset.history.map(Number),
+  }));
+  const ordens = state?.orders ?? [];
+  const patrimonioTotal = Number(state?.equity ?? 0);
   const [tickerSelecionado, setTickerSelecionado] = useState('PETR4');
   const [lado, setLado] = useState('BUY');
   const [quantidade, setQuantidade] = useState('');
-  const [preco, setPreco] = useState('');
+  const [preco, setPreco] = useState('38.50');
 
-  // Preenche o preço automaticamente quando muda o ativo
+  // Polling temporário: os eventos WebSocket serão integrados com a parte de tempo real.
   useEffect(() => {
-    const ativoAtual = ativos.find(a => a.ticker === tickerSelecionado);
-    if (ativoAtual) {
-      setPreco(ativoAtual.preco.toFixed(2));
-    }
-  }, [tickerSelecionado, ativos]);
-
-  // Efeito para simular o mercado oscilando e guardar histórico
-  useEffect(() => {
-    let interval;
-    if (isLoggedIn) {
-      interval = setInterval(() => {
-        setAtivos(prevAtivos => 
-          prevAtivos.map(ativo => {
-            const mudanca = (Math.random() - 0.5) * 0.5; 
-            const novoPreco = Math.max(1, ativo.preco + mudanca);
-            
-            // Mantém apenas os últimos 15 preços para o mini-gráfico
-            const novoHistorico = [...ativo.historico, novoPreco].slice(-15);
-            
-            return { 
-              ...ativo, 
-              preco: novoPreco,
-              historico: novoHistorico
-            };
-          })
-        );
-      }, 3000); 
-    }
-    return () => clearInterval(interval);
-  }, [isLoggedIn]);
-
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (username && password) {
-      setIsLoggedIn(true);
-    } else {
-      alert("Preencha usuário e senha!");
-    }
-  };
-
-  const handleEnviarOrdem = (e) => {
-    e.preventDefault();
-    const qtd = parseInt(quantidade);
-    const prc = parseFloat(preco);
-    
-    if (!qtd || qtd <= 0 || !prc || prc <= 0) {
-      alert("A quantidade e o preço devem ser maiores que zero!");
-      return;
-    }
-
-    const valorTotal = qtd * prc;
-
-    // 1. VALIDAÇÃO DE SALDO (Se for compra)
-    if (lado === 'BUY' && valorTotal > saldo) {
-      alert("Saldo insuficiente para esta compra!");
-      return;
-    }
-
-    // 2. VALIDAÇÃO DE CARTEIRA (Se for venda)
-    const qtdAtualNaCarteira = carteira[tickerSelecionado] || 0;
-    if (lado === 'SELL' && qtd > qtdAtualNaCarteira) {
-      alert(`Você não possui ${qtd} ações de ${tickerSelecionado} para vender. Você tem apenas ${qtdAtualNaCarteira}.`);
-      return;
-    }
-
-    // Simulação de Matching Engine
-    const novaOrdem = {
-      id: Math.floor(Math.random() * 10000),
-      ticker: tickerSelecionado,
-      lado,
-      quantidade: qtd,
-      preco: prc,
-      status: 'EXECUTADA'
+    if (!token || busy) return;
+    const controller = new AbortController();
+    let timer;
+    const refresh = async () => {
+      try {
+        const next = await api('/state', token, undefined, controller.signal);
+        if (!controller.signal.aborted) {
+          setState(next);
+          setSyncError('');
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) setSyncError(err.message);
+      } finally {
+        if (!controller.signal.aborted) timer = setTimeout(refresh, 3000);
+      }
     };
+    timer = setTimeout(refresh, 3000);
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [token, busy]);
 
-    setOrdens([novaOrdem, ...ordens]);
-
-    // Atualiza saldo e carteira
-    if (lado === 'BUY') {
-      setSaldo(saldo - valorTotal);
-      setCarteira({ 
-        ...carteira, 
-        [tickerSelecionado]: qtdAtualNaCarteira + qtd 
-      });
-    } else {
-      setSaldo(saldo + valorTotal);
-      setCarteira({ 
-        ...carteira, 
-        [tickerSelecionado]: qtdAtualNaCarteira - qtd 
-      });
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const session = await api('/demo/sessions', '', { username: username.trim() });
+      const initial = await api('/state', session.access_token);
+      setState(initial);
+      setSyncError('');
+      setToken(session.access_token);
+      const asset = initial.assets.find(a => a.ticker === tickerSelecionado);
+      if (asset) setPreco(Number(asset.price).toFixed(2));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
     }
-
-    setQuantidade('');
   };
 
-  // Cálculo do Patrimônio
-  const valorCarteira = Object.entries(carteira).reduce((total, [ticker, qtd]) => {
-    const ativo = ativos.find(a => a.ticker === ticker);
-    return total + (ativo ? ativo.preco * qtd : 0);
-  }, 0);
-  
-  const patrimonioTotal = ordens.length === 0 ? 0 : (saldo + valorCarteira);
+  const handleEnviarOrdem = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    const quantity = Number(quantidade);
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1000000
+        || !/^\d+(\.\d{1,2})?$/.test(preco) || Number(preco) <= 0) {
+      setError('Informe quantidade inteira positiva (até 1.000.000) e preço positivo com até duas casas decimais.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api('/orders', token, {
+        ticker: tickerSelecionado, side: lado, quantity, price: preco,
+      });
+      setState(result.state);
+      setQuantidade('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   // Tela de Login
   if (!isLoggedIn) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#1e293b' }}>
-        <form onSubmit={handleLogin} style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', width: '350px' }}>
-          <h1 style={{ textAlign: 'center', marginBottom: '30px', color: '#0f172a', fontSize: '24px' }}>📈 SD Investimentos</h1>
-          
-          <label style={{ marginBottom: '8px', color: '#475569', fontWeight: 'bold', fontSize: '14px' }}>Usuário</label>
-          <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} style={{ padding: '12px', marginBottom: '20px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '16px' }} placeholder="Digite seu usuário" />
-          
-          <label style={{ marginBottom: '8px', color: '#475569', fontWeight: 'bold', fontSize: '14px' }}>Senha</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ padding: '12px', marginBottom: '30px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '16px' }} placeholder="••••••••" />
-          
-          <button type="submit" style={{ padding: '14px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', transition: '0.2s' }}>Acessar Plataforma</button>
+      <div className="login-page">
+        <form onSubmit={handleLogin} className="login-card">
+          <div className="login-brand">
+            <h1 className="login-title">📈 SD Investimentos</h1>
+            <p className="login-subtitle">Simulador de bolsa multiplayer</p>
+          </div>
+
+          <label htmlFor="login-username" className="login-label">Nome de investidor</label>
+          <input
+            id="login-username"
+            className="login-input"
+            type="text"
+            required
+            maxLength={60}
+            autoFocus
+            autoComplete="username"
+            disabled={busy}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Ex.: Filipe"
+          />
+
+          {error && <p role="alert" className="login-error">{error}</p>}
+
+          <button type="submit" disabled={busy || !username.trim()} className="login-button">
+            {busy ? 'Conectando...' : 'Entrar no mercado'}
+          </button>
+
+          <p className="login-hint">
+            Modo demonstração: entre só com um nome. Saldo inicial de R$ 1.000,00.
+          </p>
         </form>
       </div>
     );
@@ -156,11 +154,14 @@ function App() {
         <h2 style={{ margin: 0, fontSize: '20px', letterSpacing: '1px' }}>📈 SD Investimentos</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <span style={{ fontSize: '14px', color: '#94a3b8' }}>Investidor: <strong>{username}</strong></span>
-          <button onClick={() => setIsLoggedIn(false)} style={{ padding: '8px 16px', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Sair</button>
+          <button disabled={busy} onClick={() => { setToken(''); setState(null); setError(''); }} style={{ padding: '8px 16px', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Sair</button>
         </div>
       </nav>
 
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '30px 20px' }}>
+        <p>Demonstração: execução imediata simulada. Cotações compartilhadas, atualizadas a cada 3 segundos.</p>
+        {error && <p role="alert" style={{ color: '#b91c1c' }}>{error}</p>}
+        {syncError && <p role="alert" style={{ color: '#b91c1c' }}>Falha na atualização: {syncError}</p>}
         
         {/* Painel Superior */}
         <div style={{ display: 'flex', gap: '20px', marginBottom: '30px', flexWrap: 'wrap' }}>
@@ -193,7 +194,7 @@ function App() {
           <div style={{ backgroundColor: '#ffffff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, color: '#0f172a' }}>Mercado ao Vivo</h3>
-              <span style={{ fontSize: '12px', backgroundColor: '#dcfce7', color: '#166534', padding: '4px 8px', borderRadius: '12px', fontWeight: 'bold' }}>● Tempo Real</span>
+              <span style={{ fontSize: '12px', backgroundColor: '#dcfce7', color: '#166534', padding: '4px 8px', borderRadius: '12px', fontWeight: 'bold' }}>{syncError ? '● Sem atualização' : '● Atualização a cada 3s'}</span>
             </div>
             
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -264,13 +265,13 @@ function App() {
               <div style={{ display: 'flex', gap: '10px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '13px', color: '#64748b', marginBottom: '5px', fontWeight: 'bold' }}>Ativo</label>
-                  <select value={tickerSelecionado} onChange={e => setTickerSelecionado(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }}>
+                  <select disabled={busy} value={tickerSelecionado} onChange={e => { setTickerSelecionado(e.target.value); setPreco(ativos.find(a => a.ticker === e.target.value).preco.toFixed(2)); }} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }}>
                     {ativos.map(a => <option key={a.ticker} value={a.ticker}>{a.ticker} - {a.nome}</option>)}
                   </select>
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '13px', color: '#64748b', marginBottom: '5px', fontWeight: 'bold' }}>Operação</label>
-                  <select value={lado} onChange={e => setLado(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '15px', fontWeight: 'bold', color: lado === 'BUY' ? '#10b981' : '#ef4444' }}>
+                  <select disabled={busy} value={lado} onChange={e => setLado(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '15px', fontWeight: 'bold', color: lado === 'BUY' ? '#10b981' : '#ef4444' }}>
                     <option value="BUY">COMPRA</option>
                     <option value="SELL">VENDA</option>
                   </select>
@@ -280,15 +281,15 @@ function App() {
               <div style={{ display: 'flex', gap: '10px' }}>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '13px', color: '#64748b', marginBottom: '5px', fontWeight: 'bold' }}>Quantidade</label>
-                  <input type="number" placeholder="Ex: 100" value={quantidade} onChange={e => setQuantidade(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
+                  <input type="number" required min="1" max="1000000" step="1" disabled={busy} placeholder="Ex: 100" value={quantidade} onChange={e => setQuantidade(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ display: 'block', fontSize: '13px', color: '#64748b', marginBottom: '5px', fontWeight: 'bold' }}>Preço (R$)</label>
-                  <input type="number" step="0.01" placeholder="Ex: 38.50" value={preco} onChange={e => setPreco(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
+                  <input type="number" required min="0.01" max="9999999999.99" disabled={busy} step="0.01" placeholder="Ex: 38.50" value={preco} onChange={e => setPreco(e.target.value)} style={{ width: '100%', padding: '12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '15px' }} />
                 </div>
               </div>
 
-              <button type="submit" style={{ padding: '14px', backgroundColor: lado === 'BUY' ? '#10b981' : '#ef4444', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', marginTop: '10px', transition: '0.2s' }}>
+              <button type="submit" disabled={busy} style={{ padding: '14px', backgroundColor: lado === 'BUY' ? '#10b981' : '#ef4444', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', marginTop: '10px', transition: '0.2s' }}>
                 {lado === 'BUY' ? 'Enviar Ordem de Compra' : 'Enviar Ordem de Venda'}
               </button>
             </form>
@@ -315,19 +316,19 @@ function App() {
               </thead>
               <tbody>
                 {ordens.map(o => (
-                  <tr key={o.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '16px 8px', color: '#64748b' }}>#{o.id}</td>
-                    <td style={{ padding: '16px 8px', color: '#64748b' }}>{new Date().toLocaleTimeString('pt-BR')}</td>
+                  <tr key={o.order_id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '16px 8px', color: '#64748b' }}>#{o.order_id.slice(0, 8)}</td>
+                    <td style={{ padding: '16px 8px', color: '#64748b' }}>{new Date(o.created_at).toLocaleString('pt-BR')}</td>
                     <td style={{ padding: '16px 8px', fontWeight: 'bold' }}>{o.ticker}</td>
                     <td style={{ padding: '16px 8px' }}>
-                      <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', backgroundColor: o.lado === 'BUY' ? '#dcfce7' : '#fee2e2', color: o.lado === 'BUY' ? '#166534' : '#991b1b' }}>
-                        {o.lado === 'BUY' ? 'COMPRA' : 'VENDA'}
+                      <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', backgroundColor: o.side === 'BUY' ? '#dcfce7' : '#fee2e2', color: o.side === 'BUY' ? '#166534' : '#991b1b' }}>
+                        {o.side === 'BUY' ? 'COMPRA' : 'VENDA'}
                       </span>
                     </td>
-                    <td style={{ padding: '16px 8px' }}>{o.quantidade}</td>
-                    <td style={{ padding: '16px 8px', fontWeight: 'bold' }}>R$ {o.preco.toFixed(2)}</td>
+                    <td style={{ padding: '16px 8px' }}>{o.quantity}</td>
+                    <td style={{ padding: '16px 8px', fontWeight: 'bold' }}>R$ {Number(o.price).toFixed(2)}</td>
                     <td style={{ padding: '16px 8px' }}>
-                      <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '13px' }}>Executada</span>
+                      <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '13px' }}>{o.status === 'FILLED' ? 'Executada' : o.status}</span>
                     </td>
                   </tr>
                 ))}
