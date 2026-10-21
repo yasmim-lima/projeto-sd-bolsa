@@ -8,7 +8,6 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactjs.org/)
 [![Vite](https://img.shields.io/badge/Vite-B73BFE?style=for-the-badge&logo=vite&logoColor=FFD62E)](https://vitejs.dev/)
-[![WebSocket](https://img.shields.io/badge/WebSocket-010101?style=for-the-badge&logo=socket.io&logoColor=white)]()
 
 </div>
 
@@ -16,13 +15,13 @@
 
 ## 🎯 Sobre o Projeto
 
-Uma simulação distribuída de um mercado financeiro onde múltiplos investidores conectados simultaneamente enviam ordens de compra e venda, acompanhando as mudanças do mercado em tempo real. 
+Uma simulação distribuída de um mercado financeiro onde múltiplos investidores conectados simultaneamente enviam ordens de compra e venda, acompanhando as mudanças do mercado em tempo real.
 
 O foco principal do projeto é a exploração prática de problemas clássicos de **Sistemas Distribuídos**, como:
-* Concorrência e condições de corrida.
-* Consistência e integridade de dados.
-* Ordenação de eventos e sincronização de estado.
-* Tolerância a falhas e reconexão.
+- Concorrência e condições de corrida.
+- Consistência e integridade de dados.
+- Ordenação de eventos e sincronização de estado.
+- Tolerância a falhas e reconexão.
 
 ---
 
@@ -66,8 +65,10 @@ cd backend
 
 # Crie e ative o ambiente virtual
 python -m venv venv
+
 # Windows:
 .\\venv\\Scripts\\Activate.ps1
+
 # Linux/Mac:
 source venv/bin/activate
 
