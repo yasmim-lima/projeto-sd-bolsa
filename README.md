@@ -52,7 +52,6 @@ O projeto foi construído utilizando uma arquitetura cliente-servidor com as seg
 
 ## 📁 Estrutura do Repositório
 
-```text
 projeto-sd-bolsa/
 ├── backend/        # Código da API, WebSocket e bots
 ├── frontend/       # Código da interface (Home Broker)
