@@ -42,11 +42,29 @@ class DemoMarket:
                 asset["price"] = max(Decimal("1.00"), asset["price"] + Decimal(randint(-25, 25)) / 100)
                 asset["history"] = (asset["history"] + [asset["price"]])[-15:]
 
+    @staticmethod
+    def _change_percent(asset):
+        return ((asset["price"] - asset["opening_price"])
+                / asset["opening_price"] * 100).quantize(Decimal("0.01"))
+
+    def quotes(self):
+        """Cotação atual de cada ativo, no formato do evento PRICE_UPDATED."""
+        with self.lock:
+            return [{
+                "ticker": asset["ticker"],
+                "price": str(asset["price"]),
+                "change_percent": str(self._change_percent(asset)),
+            } for asset in self.assets.values()]
+
+    def user_id(self, username):
+        with self.lock:
+            account = self.accounts.get(username)
+            return account["user_id"] if account else None
+
     def _snapshot(self, account):
         assets = [{
             **asset, "history": list(asset["history"]),
-            "change_percent": ((asset["price"] - asset["opening_price"])
-                               / asset["opening_price"] * 100).quantize(Decimal("0.01")),
+            "change_percent": self._change_percent(asset),
         } for asset in self.assets.values()]
         return {
             "user_id": account["user_id"], "balance": account["balance"],

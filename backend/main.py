@@ -8,7 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.realtime import ConnectionManager
+from app.realtime import ConnectionManager, make_event
 from app.trading import DemoMarket, TradingError
 
 
@@ -30,10 +30,15 @@ def create_app():
 
     @asynccontextmanager
     async def lifespan(app):
+        realtime.loop = asyncio.get_running_loop()
+
         async def update_prices():
             while True:
                 await asyncio.sleep(3)
                 market.tick()
+                # Avisa todos os clientes da nova cotação de cada ativo.
+                for quote in market.quotes():
+                    await realtime.broadcast(make_event("PRICE_UPDATED", quote))
 
         task = asyncio.create_task(update_prices())
         try:
@@ -80,9 +85,19 @@ def create_app():
     @app.post("/orders", status_code=201)
     def order(command: OrderCommand, username: str = Depends(current_user)):
         try:
-            return jsonable_encoder(market.submit(username, command), custom_encoder={Decimal: str})
+            result = jsonable_encoder(market.submit(username, command), custom_encoder={Decimal: str})
         except TradingError as error:
+            # Só o dono da ordem é avisado da rejeição.
+            realtime.publish(make_event("ORDER_REJECTED", {
+                "order_id": None,
+                "user_id": market.user_id(username),
+                "reason": str(error),
+            }), username=username)
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+        # Só o dono da ordem é avisado da aceitação (todas as abas dele).
+        realtime.publish(make_event("ORDER_ACCEPTED", result["order"]), username=username)
+        return result
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket, token: str = ""):
