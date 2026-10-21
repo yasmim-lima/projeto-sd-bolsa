@@ -78,12 +78,3 @@ Acesse o Home Broker em: http://localhost:5173
   - [ ] Tolerância a falhas e reconexão
   - [ ] Testes de carga e concorrência
 ```
-
-### Passo a passo para salvar e enviar:
-1. Salve o arquivo (`Ctrl + S`).
-2. No terminal (na raiz do projeto), rode:
-```cmd
-git add README.md
-git commit -m "docs: atualiza README com nomes da equipe e status do protótipo"
-git push origin main
-```
