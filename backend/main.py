@@ -106,7 +106,10 @@ def create_app():
             username = market.sessions.get(token)
 
         if username is None:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            # Aceita e fecha com 1008 para o cliente saber que o token é inválido
+            # (ex.: servidor reiniciado) e não ficar tentando reconectar.
+            await websocket.accept()
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Sessão inválida")
             return
 
         await realtime.connect(username, websocket)

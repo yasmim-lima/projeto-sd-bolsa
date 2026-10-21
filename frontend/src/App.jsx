@@ -26,6 +26,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [syncError, setSyncError] = useState('');
+  const [connection, setConnection] = useState('connecting');
   const isLoggedIn = Boolean(token && state);
   const saldo = Number(state?.balance ?? 0);
   const carteira = state?.positions ?? {};
@@ -40,27 +41,74 @@ function App() {
   const [quantidade, setQuantidade] = useState('');
   const [preco, setPreco] = useState('38.50');
 
-  // Polling temporário: os eventos WebSocket serão integrados com a parte de tempo real.
+  // Tempo real: o servidor avisa por WebSocket quando algo muda.
+  // Se a conexão cair, tenta reconectar a cada 2 s e, ao voltar, busca o
+  // estado completo via REST, porque eventos perdidos na queda não são reenviados.
   useEffect(() => {
-    if (!token || busy) return;
-    const controller = new AbortController();
-    let timer;
-    const refresh = async () => {
+    if (!token) return;
+    let socket;
+    let retryTimer;
+    let closedByUser = false;
+
+    const resync = async () => {
       try {
-        const next = await api('/state', token, undefined, controller.signal);
-        if (!controller.signal.aborted) {
-          setState(next);
-          setSyncError('');
-        }
+        setState(await api('/state', token));
+        setSyncError('');
       } catch (err) {
-        if (!controller.signal.aborted) setSyncError(err.message);
-      } finally {
-        if (!controller.signal.aborted) timer = setTimeout(refresh, 3000);
+        setSyncError(err.message);
       }
     };
-    timer = setTimeout(refresh, 3000);
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, [token, busy]);
+
+    const applyPrice = ({ ticker, price, change_percent }) => {
+      setState(current => {
+        if (!current) return current;
+        const assets = current.assets.map(asset => asset.ticker !== ticker ? asset : {
+          ...asset, price, change_percent, history: [...asset.history, price].slice(-15),
+        });
+        const equity = Number(current.balance) + assets.reduce(
+          (total, asset) => total + Number(asset.price) * (current.positions[asset.ticker] ?? 0), 0);
+        return { ...current, assets, equity };
+      });
+    };
+
+    const connect = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      socket = new WebSocket(`${protocol}://${window.location.host}/api/ws?token=${encodeURIComponent(token)}`);
+
+      socket.onopen = () => {
+        setConnection('online');
+        resync();
+      };
+
+      socket.onmessage = (message) => {
+        const event = JSON.parse(message.data);
+        if (event.type === 'PRICE_UPDATED') applyPrice(event.data);
+        // Ordens podem vir de outra aba do mesmo usuário: atualiza saldo e carteira.
+        if (event.type === 'ORDER_ACCEPTED' || event.type === 'ORDER_REJECTED') resync();
+      };
+
+      socket.onclose = (event) => {
+        if (closedByUser) return;
+        if (event.code === 1008) {
+          // Sessão não existe mais no servidor (ex.: reiniciado): volta ao login.
+          setToken('');
+          setState(null);
+          setConnection('connecting');
+          setError('Sua sessão expirou porque o servidor foi reiniciado. Entre novamente.');
+          return;
+        }
+        setConnection('reconnecting');
+        retryTimer = setTimeout(connect, 2000);
+      };
+    };
+
+    connect();
+    return () => {
+      closedByUser = true;
+      clearTimeout(retryTimer);
+      socket?.close();
+    };
+  }, [token]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -154,7 +202,7 @@ function App() {
         <h2 style={{ margin: 0, fontSize: '20px', letterSpacing: '1px' }}>📈 SD Investimentos</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <span style={{ fontSize: '14px', color: '#94a3b8' }}>Investidor: <strong>{username}</strong></span>
-          <button disabled={busy} onClick={() => { setToken(''); setState(null); setError(''); }} style={{ padding: '8px 16px', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Sair</button>
+          <button disabled={busy} onClick={() => { setToken(''); setState(null); setError(''); setConnection('connecting'); }} style={{ padding: '8px 16px', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Sair</button>
         </div>
       </nav>
 
@@ -194,7 +242,7 @@ function App() {
           <div style={{ backgroundColor: '#ffffff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, color: '#0f172a' }}>Mercado ao Vivo</h3>
-              <span style={{ fontSize: '12px', backgroundColor: '#dcfce7', color: '#166534', padding: '4px 8px', borderRadius: '12px', fontWeight: 'bold' }}>{syncError ? '● Sem atualização' : '● Atualização a cada 3s'}</span>
+              <span style={{ fontSize: '12px', backgroundColor: connection === 'online' ? '#dcfce7' : '#fef3c7', color: connection === 'online' ? '#166534' : '#92400e', padding: '4px 8px', borderRadius: '12px', fontWeight: 'bold' }}>{connection === 'online' ? '● Tempo real' : connection === 'reconnecting' ? '● Reconectando...' : '● Conectando...'}</span>
             </div>
             
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
