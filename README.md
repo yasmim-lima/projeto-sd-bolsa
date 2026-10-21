@@ -29,10 +29,12 @@ O foco principal do projeto é a exploração prática de problemas clássicos d
 
 | Integrante | Responsabilidade Principal |
 | :--- | :--- |
-| **Filipe de Carvalho Godoy** | Eventos em tempo real e tolerância a falhas |
-| **Yasmim de Andrade Lima** | Autenticação, persistência e setup base |
-| **Venisson Cardoso dos Santos** | Regras de negócio, ordens e bot (NPC) |
 | **Augusto César Honorato dos Santos** | Frontend (Home Broker) e apresentação |
+| **Filipe de Carvalho Godoy** | Eventos em tempo real e tolerância a falhas |
+| **Venisson Cardoso dos Santos** | Regras de negócio, ordens e bot (NPC) |
+| **Yasmim de Andrade Lima** | Autenticação, persistência e setup base |
+
+
 
 ---
 
