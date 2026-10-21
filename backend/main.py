@@ -3,11 +3,12 @@ from contextlib import asynccontextmanager, suppress
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.realtime import ConnectionManager
 from app.trading import DemoMarket, TradingError
 
 
@@ -25,6 +26,7 @@ class OrderCommand(BaseModel):
 
 def create_app():
     market = DemoMarket()
+    realtime = ConnectionManager()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -43,6 +45,7 @@ def create_app():
 
     app = FastAPI(title="Simulador Bolsa SD - UFS", lifespan=lifespan)
     app.state.market = market
+    app.state.realtime = realtime
 
     bearer = HTTPBearer(auto_error=False)
 
@@ -80,6 +83,29 @@ def create_app():
             return jsonable_encoder(market.submit(username, command), custom_encoder={Decimal: str})
         except TradingError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket, token: str = ""):
+        # Mesma validação das rotas REST: o token precisa ser de uma sessão ativa.
+        with market.lock:
+            username = market.sessions.get(token)
+
+        if username is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        await realtime.connect(username, websocket)
+        try:
+            # O cliente só escuta; mensagens recebidas servem apenas para manter
+            # a conexão viva (ex.: "ping" -> "pong").
+            while True:
+                message = await websocket.receive_text()
+                if message == "ping":
+                    await websocket.send_text("pong")
+        except WebSocketDisconnect:
+            pass
+        finally:
+            realtime.disconnect(username, websocket)
 
     return app
 
