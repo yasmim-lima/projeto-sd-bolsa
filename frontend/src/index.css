@@ -1,0 +1,17 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: #f4f7f6;
+  font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color: #333;
+}
+
+/* Força os inputs e selects a terem fundo branco e texto escuro */
+input, select {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
