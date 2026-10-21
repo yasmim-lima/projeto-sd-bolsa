@@ -207,7 +207,10 @@ function App() {
       </nav>
 
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '30px 20px' }}>
-        <p>Demonstração: execução imediata simulada. Cotações compartilhadas, atualizadas a cada 3 segundos.</p>
+        <p className="demo-note">
+          <span>Execução imediata simulada</span>
+          <span>Cotações compartilhadas, a cada 3 segundos</span>
+        </p>
         {error && <p role="alert" style={{ color: '#b91c1c' }}>{error}</p>}
         {syncError && <p role="alert" style={{ color: '#b91c1c' }}>Falha na atualização: {syncError}</p>}
         

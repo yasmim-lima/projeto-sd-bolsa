@@ -300,3 +300,20 @@
   text-align: center;
   color: #64748b;
 }
+
+.demo-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 0;
+  margin: 0 0 22px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.demo-note span + span::before {
+  content: "·";
+  margin: 0 10px;
+  color: #94a3b8;
+}
