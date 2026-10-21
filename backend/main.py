@@ -4,12 +4,17 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.encoders import jsonable_encoder
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.database import Base, engine
 from app.realtime import ConnectionManager, make_event
+from app.routers import auth
 from app.trading import DemoMarket, TradingError
+
+# Cria as tabelas do banco no SQLite se não existirem
+Base.metadata.create_all(bind=engine)
 
 
 class DemoSession(BaseModel):
@@ -49,6 +54,10 @@ def create_app():
                 await task
 
     app = FastAPI(title="Simulador Bolsa SD - UFS", lifespan=lifespan)
+    
+    # Adiciona as rotas de Autenticação JWT do banco SQLite
+    app.include_router(auth.router)
+
     app.state.market = market
     app.state.realtime = realtime
 
