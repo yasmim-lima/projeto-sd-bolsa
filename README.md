@@ -1,7 +1,6 @@
 # Simulador de Bolsa de Valores Multiplayer
 
-Projeto da disciplina **Sistemas Distribuídos (COMP0470)** — Universidade Federal de Sergipe.
-Professor: Rafael Oliveira Vasconcelos.
+Projeto da disciplina **Sistemas Distribuídos (COMP0470)** — Universidade Federal de Sergipe. Professor: Rafael Oliveira Vasconcelos.
 
 Simulação distribuída de um mercado financeiro: vários investidores conectados ao mesmo tempo enviam ordens de compra e venda, e todos acompanham as mudanças do mercado em tempo real. O foco do projeto são os problemas de sistemas distribuídos: concorrência, consistência, ordenação de eventos, sincronização de estado e tolerância a falhas.
 
@@ -9,10 +8,10 @@ Simulação distribuída de um mercado financeiro: vários investidores conectad
 
 | Integrante | Responsabilidade |
 |---|---|
-| _nome_ | Autenticação, persistência e setup base |
-| _nome_ | Regras de negócio, ordens e bot (NPC) |
-| _nome_ | Eventos em tempo real e tolerância a falhas |
-| _nome_ | Frontend (Home Broker) e apresentação |
+| Filipe de Carvalho Godoy | Eventos em tempo real e tolerância a falhas |
+| Yasmim de Andrade Lima | Autenticação, persistência e setup base |
+| Venisson Cardoso dos Santos | Regras de negócio, ordens e bot (NPC) |
+| Augusto César Honorato dos Santos | Frontend (Home Broker) e apresentação |
 
 ## Tecnologias
 
@@ -24,7 +23,7 @@ Simulação distribuída de um mercado financeiro: vários investidores conectad
 
 ## Estrutura
 
-```
+```text
 projeto-sd-bolsa/
 ├── backend/        # API, WebSocket e bot
 ├── frontend/       # Home Broker
@@ -40,19 +39,24 @@ cd backend
 python -m venv venv
 
 # Windows (PowerShell)
-.\venv\Scripts\Activate.ps1
+.\\venv\\Scripts\\Activate.ps1
+
 # Linux/Mac
 source venv/bin/activate
 
 pip install -r requirements.txt
 uvicorn main:app --reload
 ```
-
 Documentação interativa da API (Swagger): http://127.0.0.1:8000/docs
 
 ### Frontend
 
-_Em construção._
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Acesse o Home Broker em: http://localhost:5173
 
 ## Documentação
 
@@ -60,5 +64,26 @@ _Em construção._
 
 ## Status
 
-- **Parte 1 (21/10/2026):**
+- **Parte 1 (21/10/2026):** Protótipo Funcional
+  - [x] Conexão de múltiplos clientes (Frontend)
+  - [x] Interface do Home Broker (React + Vite)
+  - [x] Simulação de mercado em tempo real (Oscilação de preços)
+  - [x] Envio de ordens de compra e venda com validação de saldo e carteira
+  - [x] Cálculo de patrimônio e mini-gráficos de variação
+  - [x] Especificação da API e WebSocket (docs/API.md)
+
 - **Parte 2 (30/11/2026):**
+  - [ ] Matching Engine real (cruzamento de ordens)
+  - [ ] Agentes automatizados (Bots)
+  - [ ] Tolerância a falhas e reconexão
+  - [ ] Testes de carga e concorrência
+```
+
+### Passo a passo para salvar e enviar:
+1. Salve o arquivo (`Ctrl + S`).
+2. No terminal (na raiz do projeto), rode:
+```cmd
+git add README.md
+git commit -m "docs: atualiza README com nomes da equipe e status do protótipo"
+git push origin main
+```
