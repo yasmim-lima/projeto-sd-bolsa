@@ -135,16 +135,19 @@ $env:BOLSA_API_TARGET="http://IP_DO_BACKEND:8000"; npm run dev
 ---
 
 ## 📑 Documentação Adicional
-📄 Especificação da API e Eventos WebSocket (em construção)
+📄 Documentação do protótipo e evolução planejada:
 
+- [Regras do mercado](docs/REGRAS_MERCADO.md)
+- [Contrato de eventos WebSocket](docs/API.md)
 - [Ordens do protótipo: execução, contrato REST e roteiro de apresentação](docs/PROTOTIPO_ORDENS.md)
 - [Revisão dos campos do contrato WebSocket](docs/REVISAO_API.md)
 
 O protótipo de ordens usa contas de demonstração por nome, sem senha, e estado
 em memória no backend. Execute um único processo do servidor. As compras e
-vendas têm execução imediata simulada; as cotações são compartilhadas e a tela
-consulta o estado a cada três segundos. Reiniciar o backend apaga os dados.
-Autenticação JWT, persistência e WebSocket ainda precisam de integração.
+vendas têm execução imediata simulada. As cotações são geradas a cada três
+segundos e enviadas por WebSocket. Eventos de ordens e reconexões fazem a tela
+consultar o estado via REST. Reiniciar o backend apaga os dados.
+Autenticação JWT e persistência ainda precisam de integração.
 
 ---
 
