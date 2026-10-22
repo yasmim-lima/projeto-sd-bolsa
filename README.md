@@ -59,47 +59,78 @@ projeto-sd-bolsa/
 ├── backend/        # Código da API, WebSocket e bots
 ├── frontend/       # Código da interface (Home Broker)
 └── docs/           # Documentação técnica (ex: API.md)
-````
+```
 
 ---
 
 ## 🚀 Como Executar o Projeto
-## 1. Backend (API)
-```text
-# Entre na pasta do backend
+
+São dois processos, cada um em um terminal: o **backend** (porta 8000) e o **frontend** (porta 5173). Suba o backend primeiro.
+
+### 1. Backend (API + WebSocket)
+
+A pasta `venv/` **não vem no repositório**: cada pessoa cria a sua na primeira vez.
+
+**Linux / Mac**
+
+```bash
 cd backend
-
-# Crie e ative o ambiente virtual
-python -m venv venv
-
-# Windows:
-.\\venv\\Scripts\\Activate.ps1
-
-# Linux/Mac:
+python3 -m venv venv
 source venv/bin/activate
-
-# Instale as dependências
 pip install -r requirements.txt
-
-# Rode o servidor
 uvicorn main:app --reload
 ```
-📚 Documentação da API (Swagger): Acesse http://127.0.0.1:8000/docs com o servidor rodando.
+
+**Windows (PowerShell)**
+
+```powershell
+cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
+
+Nas próximas vezes, basta ativar a venv (`source venv/bin/activate` ou `.\venv\Scripts\Activate.ps1`) e rodar o `uvicorn`.
+
+📚 Documentação da API (Swagger): http://127.0.0.1:8000/docs
+
+#### Problemas comuns
+
+| Erro | Solução |
+| :--- | :--- |
+| `ensurepip is not available` ao criar a venv (Ubuntu/Debian) | `sudo apt install python3-venv` e crie a venv de novo |
+| Sem permissão de `sudo` | Pule a venv: `pip install --user -r requirements.txt` e depois `python3 -m uvicorn main:app --reload` |
+| `python: command not found` no Linux | Use `python3` |
+| PowerShell bloqueia o `Activate.ps1` | `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
+| Outros computadores precisam acessar o backend | Rode com `uvicorn main:app --host 0.0.0.0 --port 8000` |
 
 ---
 
-## 2. Frontend (Home Broker)
-```text
-# Em outro terminal, entre na pasta do frontend
+### 2. Frontend (Home Broker)
+
+```bash
+# Em outro terminal
 cd frontend
-
-# Instale as dependências
-npm install
-
-# Rode a interface
+npm ci # Ou npm install
 npm run dev
 ```
+
+O `npm ci` é para não alterar o `package-lock.json`.
+
 💻 Acesse o Home Broker: http://localhost:5173
+
+O frontend repassa as chamadas para `http://127.0.0.1:8000`. Se o backend estiver em outra máquina, informe o endereço:
+
+```bash
+# Linux / Mac
+BOLSA_API_TARGET=http://IP_DO_BACKEND:8000 npm run dev
+```
+
+```powershell
+# Windows (PowerShell)
+$env:BOLSA_API_TARGET="http://IP_DO_BACKEND:8000"; npm run dev
+```
 
 ---
 
