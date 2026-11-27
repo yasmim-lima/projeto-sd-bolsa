@@ -70,20 +70,124 @@ As operações são processadas uma por vez nessa região, evitando o uso simult
 
 A ordem de aquisição da trava não garante prioridade pela chegada das requisições. A Parte 1 ainda não possui uma política de prioridade de preço e tempo.
 
-## Proposta para a Parte 2
+## Modo experimental da Parte 2
 
-As regras abaixo estão planejadas e ainda não foram implementadas:
+No backend, ative `BOLSA_MATCHING=1` antes de iniciar o Uvicorn. No
+PowerShell, use `$env:BOLSA_MATCHING = "1"`. Execute um único processo.
+Sem essa variável, permanece disponível o protótipo de execução imediata.
 
-- Manter ordens abertas em um livro de ofertas.
-- Priorizar compras pelo maior preço.
-- Priorizar vendas pelo menor preço.
-- Desempatar pelo registro de chegada ao servidor.
-- Executar ordens quando o preço de compra for maior ou igual ao preço de venda.
-- Permitir execução parcial quando as quantidades diferirem.
-- Reservar saldo e ações comprometidos em ordens abertas.
-- Criar bots que enviem ordens pelas mesmas validações aplicadas aos demais investidores.
+- Cada conta de teste recebe R$ 1.000,00 e 10 ações de cada ativo.
+- Ofertas limitadas aguardam no livro por ativo. O melhor preço tem prioridade,
+  com desempate pela ordem de registro no servidor.
+- O preço executado é o da oferta que já estava no livro. A última negociação
+  determina a cotação e atualiza seu histórico.
+- O saldo comprometido pelo preço limite e as ações ofertadas são reservados
+  pela quantidade em aberto. A execução parcial mantém o restante no livro.
+- Se o preço da nova ordem cruzar uma oferta da própria conta, a ordem é
+  rejeitada antes de qualquer execução.
+- Apenas o dono pode cancelar o restante de uma ordem aberta. O cancelamento
+  libera a reserva e preserva as negociações já realizadas.
+- O preço médio é ponderado pelo custo das ações ainda na carteira. As 10
+  ações iniciais de cada ativo usam o preço de abertura como custo. O lucro
+  ou prejuízo não realizado compara o valor atual da posição com esse custo.
+  O volume soma as ações executadas no mercado, contando cada negócio uma vez.
 
-Antes da implementação, o grupo definirá o preço usado em cada negociação, o cancelamento de ordens, a liberação das reservas e o tratamento de ordens do mesmo investidor.
+Por padrão, as sessões e os dados desse modo ficam em memória. Para testar
+a recuperação após reinício, configure `BOLSA_MARKET_DB` com o caminho de
+um SQLite separado. Nesse modo cada alteração confirmada grava o estado
+inteiro em uma transação, incluindo saldos, posições, livro, negociações,
+sessões de demonstração e chaves de idempotência. Reservas são recalculadas
+a partir das quantidades em aberto. Se a gravação falhar, o estado em memória
+é restaurado e a API não emite evento de sucesso.
+
+Use apenas um processo por banco e um diretório gravável. O checkpoint
+contém dados e tokens do ambiente de demonstração. Ele serve para provar
+a recuperação local. A integração com JWT e o esquema definitivo ficam
+para a etapa seguinte.
+
+### NPC de liquidez
+
+Com o backend no modo experimental, execute `python bot.py` na pasta
+`backend`. O agente usa a mesma API dos investidores. A cada ciclo, tenta
+manter uma oferta de compra e uma de venda por ativo, em torno da última
+cotação, com um afastamento de R$ 0,10 de cada lado. Cancela ofertas abertas
+cujo preço ficou desatualizado. Cada nova oferta tem de uma a três ações,
+limitadas pelo saldo ou pela posição disponível.
+
+Use `--once` para um ciclo, `--seed` para definir a sequência de quantidades,
+`--interval` para configurar a pausa em segundos e `--url` para outro backend.
+O agente usa a conta de demonstração `NPC Liquidez` por padrão. Use
+`--username` para escolher outra conta e mantenha uma instância por nome.
+
+### Fluxo de uma ordem
+
+```mermaid
+flowchart TD
+    A["Home Broker ou NPC"] -->|"POST /orders"| B["FastAPI valida sessão e comando"]
+    B --> C["Motor verifica reservas e cruza ofertas sob uma trava"]
+    C --> D["Atualiza contas, livro, negociações e chave de reenvio"]
+    D --> E{"SQLite experimental ativo?"}
+    E -->|"Sim"| F["Confirma o estado em uma transação"]
+    E -->|"Não"| H["Devolve o resultado e publica o evento"]
+    F -->|"Sucesso"| H
+    F -->|"Falha"| X["Restaura o estado anterior e retorna erro"]
+    H --> I["Home Broker recebe aviso via WebSocket"]
+    I -->|"GET /state"| A
+```
+
+### Teste de recuperação
+
+Com o SQLite experimental ativo, duas sessões negociaram 2 PETR4. A
+compra de 2 a R$ 40,00 chegou primeiro, e a venda de 4 a R$ 39,00
+executou parcialmente a R$ 40,00. Antes e depois de reiniciar o backend,
+o vendedor tinha R$ 1.080,00 e 8 PETR4, o comprador tinha R$ 920,00 e
+12 PETR4, e o livro mantinha 2 ações à venda a R$ 39,00. As duas
+sessões recuperaram o mesmo histórico e responderam por WebSocket.
+Em um teste separado, reenviar uma ordem aceita com a mesma chave após
+reiniciar retornou o mesmo ID, sem uma segunda negociação.
+
+No Docker Compose, uma cópia limpa subiu com `compose.persist.yaml` e um
+volume vazio. A venda chegou primeiro, então 2 PETR4 foram negociadas a
+R$ 39,00. O contêiner do backend foi substituído e o Home Broker
+permaneceu ativo. As duas sessões retornaram os mesmos snapshots pelo
+proxy, o WebSocket voltou a responder, e o reenvio recuperou a ordem
+original sem criar outro negócio.
+
+O teste de concorrência inicia a segunda requisição pela API enquanto a
+primeira ainda está gravando no SQLite. Se a compra de 2 ações chega ao
+motor primeiro, ela executa uma vez e o cancelamento libera apenas as
+2 ações restantes da venda de 4. Na ordem inversa, o cancelamento libera
+as 4 ações e a compra fica aberta, com R$ 80,00 reservados. O teste reabre
+o mesmo banco e verifica carteiras, saldos, reservas, livro, histórico
+e reenvio com a mesma chave nos dois casos.
+
+### Carga com e sem SQLite
+
+Medição local em 27/11/2026, com um processo FastAPI, cliente HTTP em
+processo separado e três rodadas por cenário. Os mesmos cenários foram
+executados primeiro em memória e depois com um arquivo SQLite temporário
+vazio. O NPC ficou desativado. Os cenários de cada modo compartilharam a
+mesma instância, portanto os históricos cresceram ao longo da execução.
+O p95 é medido no cliente e inclui os reenvios. A vazão da tabela conta
+somente ordens novas.
+
+| Clientes | Memória p95 | SQLite p95 | Memória ordens/s | SQLite ordens/s |
+| ---: | ---: | ---: | ---: | ---: |
+| 5 | 51 ms | 62 ms | 69,36 | 58,70 |
+| 20 | 243 ms | 282 ms | 70,14 | 61,29 |
+| 50 | 1.189 ms | 969 ms | 37,44 | 50,20 |
+| 100 | 1.597 ms | 2.740 ms | 54,52 | 33,35 |
+
+Cada modo registrou 525 ordens novas, 24 reenvios reconhecidos e 261
+negociações. Todos os cenários passaram nas verificações de saldo, ações,
+reservas, livro e unicidade de ordens. A 100 clientes, o SQLite teve p95
+cerca de 72% maior e vazão cerca de 39% menor. A inversão a 50 clientes
+mostra a variabilidade desta execução local. Esses números descrevem
+uma execução por modo, sem medição de CPU ou memória.
+
+Para repetir, rode `python backend/load_test.py --url http://127.0.0.1:8000`
+contra duas instâncias descartáveis, uma com e outra sem
+`BOLSA_MARKET_DB`. Mantenha os mesmos parâmetros e desative o NPC.
 
 ## Limitações do protótipo
 

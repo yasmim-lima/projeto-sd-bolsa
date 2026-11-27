@@ -1,0 +1,24 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      BOLSA_MATCHING: "1"
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  frontend:
+    build: ./frontend
+    ports:
+      - "127.0.0.1:${BOLSA_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+  npc:
+    build: ./backend
+    profiles: ["npc"]
+    command: ["python", "bot.py", "--url", "http://backend:8000"]
+    depends_on:
+      backend:
+        condition: service_healthy

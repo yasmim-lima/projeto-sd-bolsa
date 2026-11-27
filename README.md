@@ -135,6 +135,71 @@ $env:BOLSA_API_TARGET="http://IP_DO_BACKEND:8000"; npm run dev
 ---
 
 ## 📑 Documentação Adicional
+
+### Modo experimental com Docker Compose
+
+Na raiz do repositório, execute `docker compose up --build` e abra
+`http://127.0.0.1:8080`. O Nginx serve o Home Broker e encaminha REST e
+WebSocket em `/api` para o backend. O Compose usa um único processo FastAPI
+com o livro de ofertas ativado. Para incluir o agente de liquidez, use
+`docker compose --profile npc up --build`. A porta local pode ser alterada
+com `BOLSA_PORT`. Para encerrar, execute `docker compose --profile npc down`.
+
+O mercado experimental e as chaves de idempotência ficam em memória e são
+perdidos ao reiniciar o backend na configuração padrão do Compose. O banco
+SQLite local do repositório fica fora dos contêineres.
+
+Para testar a recuperação no Docker, adicione a configuração do volume:
+
+```powershell
+docker compose -f compose.yaml -f compose.persist.yaml up --build -d --wait
+```
+
+Em duas contas distintas, envie uma venda de 4 PETR4 a R$ 39,00 e depois
+uma compra de 2 com limite de R$ 40,00. A compra deve executar a R$ 39,00.
+Com as duas abas abertas, recrie apenas o backend:
+
+```powershell
+docker compose -f compose.yaml -f compose.persist.yaml up -d --no-deps --force-recreate --wait backend
+```
+
+Confira se a negociação e as 2 ações restantes no livro foram recuperadas.
+O volume nomeado `market_data` guarda o SQLite experimental. O comando
+`docker compose -f compose.yaml -f compose.persist.yaml down` preserva o
+volume. Use `down --volumes` com os mesmos arquivos apenas para apagar
+os dados desse ambiente.
+
+Para provar a recuperação em uma execução local, na pasta `backend`, use
+um arquivo de teste separado e repita o mesmo comando após parar o servidor:
+
+```powershell
+$env:BOLSA_MATCHING = "1"
+$env:BOLSA_MARKET_DB = Join-Path $env:TEMP "market-demo.db"
+.\venv\Scripts\python.exe -m uvicorn main:app
+```
+
+O SQLite experimental guarda o estado do mercado de demonstração.
+Use um único processo e mantenha o arquivo fora do repositório.
+
+### Logs, métricas e carga
+
+- `docker compose logs -f backend` acompanha aceitação, execução, cancelamento,
+  rejeição e reenvio. As execuções registram os IDs das duas ordens e da negociação.
+- `http://127.0.0.1:8080/api/metrics` retorna contagens por status HTTP,
+  latência média e máxima e requisições por segundo desde o início do processo.
+- Com o ambiente Python do backend ativo, execute
+  `python backend/load_test.py --url http://127.0.0.1:8080/api` na raiz. O teste
+  imprime JSON por cenário, com latência média, p95, máxima, vazão de ordens,
+  vazão de negociações e erros. Os cenários padrões usam 5, 20, 50 e 100 clientes.
+  Para medir CPU e memória simultaneamente, use `docker stats` em outro terminal.
+
+Execute a carga em uma instância descartável e exclusiva, com o NPC desativado
+e sem outros investidores. Cada cenário cria contas de teste, verifica
+conservação de saldo e ações, reservas, livro e reenvio, e cancela as sobras.
+Os históricos de teste permanecem na instância até ela ser encerrada.
+Consulte a [comparação de carga com e sem SQLite](docs/REGRAS_MERCADO.md#carga-com-e-sem-sqlite)
+e o [fluxo de uma ordem](docs/REGRAS_MERCADO.md#fluxo-de-uma-ordem).
+
 📄 Documentação do protótipo e evolução planejada:
 
 - [Regras do mercado](docs/REGRAS_MERCADO.md)
