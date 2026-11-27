@@ -27,9 +27,36 @@ Todos os eventos seguem o formato:
 - No protótipo, `status` é `"FILLED"` e `created_at` é a data da ordem em ISO 8601 UTC.
 - Erros REST `401` e `422` não geram `ORDER_REJECTED`.
 
-`BOOK_UPDATED` está planejado para a Parte 2 e ainda não é emitido.
-O formato proposto é `ticker`, `buy_orders` e `sell_orders`, com itens
-contendo `price` e `quantity`; a semântica de agrupamento ainda será definida.
+### Modo experimental com livro de ofertas
+
+Com `BOLSA_MATCHING=1`, `BOOK_UPDATED` é enviado a todos após uma ordem
+aceita ou um cancelamento. Seu `data` contém apenas `ticker`. O cliente
+consulta `GET /state` para obter o livro e seu estado privado. Neste modo,
+a atualização do preço também chega por esse snapshot.
+
+`/state` acrescenta `revision`, `available_balance`, `available_positions`,
+`trades` (negociações da conta) e `books` (por ativo). Cada livro tem
+`buy_orders` e `sell_orders`, com `price` e `quantity` agregados por nível.
+`portfolio` informa `average_price` e `unrealized_profit` por ativo,
+em strings decimais. Uma posição zerada tem `average_price` nulo.
+Cada item de `assets` informa `volume`, a quantidade acumulada negociada.
+A ordem pode ter estado `OPEN`, `PARTIALLY_FILLED`, `FILLED` ou `CANCELLED`
+e inclui `remaining_quantity`. `POST /orders/{order_id}/cancel` cancela
+o restante de uma ordem da conta autenticada e devolve `order` e `state`.
+
+No modo experimental, `POST /orders` aceita o cabeçalho opcional
+`Idempotency-Key` (1 a 128 caracteres). Se perder a resposta, repita a mesma
+ordem com a mesma chave. Uma ordem nova recebe `201`. A repetição de uma
+ordem já aceita recebe `200` com o estado atual e o mesmo ID, sem novo evento.
+Reutilizar a chave com dados diferentes retorna `409`. A chave pertence à conta
+e vale enquanto o estado do mercado estiver disponível. Sem
+`BOLSA_MARKET_DB` ele é perdido no reinício. Com o SQLite experimental,
+sessões, ordens e chaves são recuperadas juntas. Rejeições não reservam a
+chave.
+
+Se perder a confirmação, o Home Broker mantém a ordem original e oferece
+o botão **Reenviar a mesma ordem** enquanto a sessão estiver ativa. A
+confirmação pendente fica na página aberta e se perde ao recarregar.
 
 ### Exemplo
 

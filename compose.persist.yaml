@@ -1,0 +1,9 @@
+services:
+  backend:
+    environment:
+      BOLSA_MARKET_DB: /var/lib/bolsa/market-demo.db
+    volumes:
+      - market_data:/var/lib/bolsa
+
+volumes:
+  market_data:
