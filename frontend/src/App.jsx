@@ -1,12 +1,26 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
-async function api(path, token, body, signal) {
+const orderStatuses = {
+  OPEN: 'Aberta',
+  PARTIALLY_FILLED: 'Parcialmente executada',
+  FILLED: 'Executada',
+  CANCELLED: 'Cancelada',
+};
+
+const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function newerState(current, incoming) {
+  return current?.revision > incoming.revision ? current : incoming;
+}
+
+async function api(path, token, body, { key, signal } = {}) {
   const response = await fetch(`/api${path}`, {
     method: body ? 'POST' : 'GET',
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(key ? { 'Idempotency-Key': key } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
     signal,
@@ -14,7 +28,9 @@ async function api(path, token, body, signal) {
   const data = await response.json();
   if (!response.ok) {
     const detail = typeof data.detail === 'string' ? data.detail : 'Confira os campos informados.';
-    throw new Error(detail);
+    const error = new Error(detail);
+    error.status = response.status;
+    throw error;
   }
   return data;
 }
@@ -24,15 +40,17 @@ function App() {
   const [username, setUsername] = useState('');
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [pendingOrder, setPendingOrder] = useState(null);
   const [error, setError] = useState('');
   const [syncError, setSyncError] = useState('');
   const [connection, setConnection] = useState('connecting');
   const isLoggedIn = Boolean(token && state);
-  const saldo = Number(state?.balance ?? 0);
+  const saldo = Number(state?.available_balance ?? state?.balance ?? 0);
   const carteira = state?.positions ?? {};
   const ativos = (state?.assets ?? []).map(asset => ({
     ticker: asset.ticker, nome: asset.name, preco: Number(asset.price),
     precoAbertura: Number(asset.opening_price), historico: asset.history.map(Number),
+    volume: asset.volume,
   }));
   const ordens = state?.orders ?? [];
   const patrimonioTotal = Number(state?.equity ?? 0);
@@ -40,6 +58,8 @@ function App() {
   const [lado, setLado] = useState('BUY');
   const [quantidade, setQuantidade] = useState('');
   const [preco, setPreco] = useState('38.50');
+  const book = state?.books?.[tickerSelecionado];
+  const retryableOrder = pendingOrder?.token === token ? pendingOrder : null;
 
   // Tempo real: o servidor avisa por WebSocket quando algo muda.
   // Se a conexão cair, tenta reconectar a cada 2 s e, ao voltar, busca o
@@ -52,10 +72,12 @@ function App() {
 
     const resync = async () => {
       try {
-        setState(await api('/state', token));
+        const incoming = await api('/state', token);
+        if (closedByUser) return;
+        setState(current => newerState(current, incoming));
         setSyncError('');
       } catch (err) {
-        setSyncError(err.message);
+        if (!closedByUser) setSyncError(err.message);
       }
     };
 
@@ -84,12 +106,13 @@ function App() {
         const event = JSON.parse(message.data);
         if (event.type === 'PRICE_UPDATED') applyPrice(event.data);
         // Ordens podem vir de outra aba do mesmo usuário: atualiza saldo e carteira.
-        if (event.type === 'ORDER_ACCEPTED' || event.type === 'ORDER_REJECTED') resync();
+        if (['ORDER_ACCEPTED', 'ORDER_REJECTED', 'BOOK_UPDATED'].includes(event.type)) resync();
       };
 
       socket.onclose = (event) => {
         if (closedByUser) return;
         if (event.code === 1008) {
+          closedByUser = true;
           // Sessão não existe mais no servidor (ex.: reiniciado): volta ao login.
           setToken('');
           setState(null);
@@ -119,6 +142,7 @@ function App() {
       const session = await api('/demo/sessions', '', { username: username.trim() });
       const initial = await api('/state', session.access_token);
       setState(initial);
+      setPendingOrder(null);
       setSyncError('');
       setToken(session.access_token);
       const asset = initial.assets.find(a => a.ticker === tickerSelecionado);
@@ -132,21 +156,52 @@ function App() {
 
   const handleEnviarOrdem = async (e) => {
     e.preventDefault();
-    if (busy) return;
+    if (busy || retryableOrder) return;
     const quantity = Number(quantidade);
     if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1000000
         || !/^\d+(\.\d{1,2})?$/.test(preco) || Number(preco) <= 0) {
       setError('Informe quantidade inteira positiva (até 1.000.000) e preço positivo com até duas casas decimais.');
       return;
     }
+    const command = { ticker: tickerSelecionado, side: lado, quantity, price: preco };
+    const key = book ? Array.from(crypto.getRandomValues(new Uint8Array(16)),
+      byte => byte.toString(16).padStart(2, '0')).join('') : undefined;
+    await submitOrder({ command, key, token });
+  };
+
+  const submitOrder = async (submission) => {
+    if (busy) return;
     setBusy(true);
     setError('');
     try {
-      const result = await api('/orders', token, {
-        ticker: tickerSelecionado, side: lado, quantity, price: preco,
+      const result = await api('/orders', submission.token, submission.command, {
+        key: submission.key,
+        signal: AbortSignal.timeout(10000),
       });
-      setState(result.state);
+      if (!result?.order || !result.state) throw new Error('Resposta incompleta.');
+      setState(current => newerState(current, result.state));
+      setPendingOrder(null);
       setQuantidade('');
+    } catch (err) {
+      const rejected = [400, 401, 403, 409, 422].includes(err.status);
+      if (!rejected && submission.key) {
+        setPendingOrder(submission);
+      } else {
+        setPendingOrder(null);
+        setError(rejected ? err.message : 'Não foi possível confirmar o envio. Consulte o histórico antes de repetir.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancelOrder = async (orderId) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api(`/orders/${encodeURIComponent(orderId)}/cancel`, token, {});
+      setState(current => newerState(current, result.state));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -208,11 +263,19 @@ function App() {
 
       <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '30px 20px' }}>
         <p className="demo-note">
-          <span>Execução imediata simulada</span>
-          <span>Cotações compartilhadas, a cada 3 segundos</span>
+          <span>{book ? 'Negociação entre investidores' : 'Execução imediata simulada'}</span>
+          <span>{book ? 'Cotação pelo último negócio' : 'Cotações compartilhadas, a cada 3 segundos'}</span>
         </p>
         {error && <p role="alert" style={{ color: '#b91c1c' }}>{error}</p>}
         {syncError && <p role="alert" style={{ color: '#b91c1c' }}>Falha na atualização: {syncError}</p>}
+        {retryableOrder && (
+          <div role="alert">
+            <p>O resultado do envio é incerto. Você pode reenviar a mesma ordem sem duplicá-la nesta sessão.</p>
+            <button type="button" disabled={busy} onClick={() => submitOrder(retryableOrder)}>
+              Reenviar a mesma ordem
+            </button>
+          </div>
+        )}
         
         {/* Painel Superior */}
         <div style={{ display: 'flex', gap: '20px', marginBottom: '30px', flexWrap: 'wrap' }}>
@@ -233,16 +296,22 @@ function App() {
               {Object.entries(carteira).map(([ticker, qtd]) => (
                 <span key={ticker} style={{ backgroundColor: '#f3e8ff', color: '#6b21a8', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>
                   {ticker}: {qtd}
+                  {state.portfolio?.[ticker]?.average_price != null && (
+                    <small style={{ display: 'block' }}>
+                      Médio {money.format(state.portfolio[ticker].average_price)}
+                      {' · '}P/L não realizado {money.format(state.portfolio[ticker].unrealized_profit)}
+                    </small>
+                  )}
                 </span>
               ))}
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 430px), 1fr))', gap: '20px' }}>
           
           {/* Coluna Esquerda: Tabela de Ativos com Gráfico */}
-          <div style={{ backgroundColor: '#ffffff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+          <div style={{ backgroundColor: '#ffffff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', overflowX: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, color: '#0f172a' }}>Mercado ao Vivo</h3>
               <span style={{ fontSize: '12px', backgroundColor: connection === 'online' ? '#dcfce7' : '#fef3c7', color: connection === 'online' ? '#166534' : '#92400e', padding: '4px 8px', borderRadius: '12px', fontWeight: 'bold' }}>{connection === 'online' ? '● Tempo real' : connection === 'reconnecting' ? '● Reconectando...' : '● Conectando...'}</span>
@@ -254,6 +323,7 @@ function App() {
                   <th style={{ padding: '12px 8px' }}>Ativo</th>
                   <th style={{ padding: '12px 8px' }}>Preço Atual</th>
                   <th style={{ padding: '12px 8px' }}>Variação</th>
+                  {book && <th style={{ padding: '12px 8px' }}>Volume</th>}
                   <th style={{ padding: '12px 8px' }}>Tendência</th>
                 </tr>
               </thead>
@@ -278,6 +348,7 @@ function App() {
                       <td style={{ padding: '16px 8px', fontWeight: 'bold', color: isUp ? '#10b981' : '#ef4444' }}>
                         {isUp ? '▲' : '▼'} {Math.abs(variacaoPercentual).toFixed(2)}%
                       </td>
+                      {book && <td style={{ padding: '16px 8px' }}>{a.volume?.toLocaleString('pt-BR') ?? '—'}</td>}
                       
                       {/* Mini Gráfico de Barras */}
                       <td style={{ padding: '16px 8px' }}>
@@ -340,15 +411,32 @@ function App() {
                 </div>
               </div>
 
-              <button type="submit" disabled={busy} style={{ padding: '14px', backgroundColor: lado === 'BUY' ? '#10b981' : '#ef4444', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', marginTop: '10px', transition: '0.2s' }}>
+              <button type="submit" disabled={busy || Boolean(retryableOrder)} style={{ padding: '14px', backgroundColor: lado === 'BUY' ? '#10b981' : '#ef4444', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', marginTop: '10px', transition: '0.2s' }}>
                 {lado === 'BUY' ? 'Enviar Ordem de Compra' : 'Enviar Ordem de Venda'}
               </button>
             </form>
           </div>
         </div>
 
+        {book && (
+          <section>
+            <h3>Livro de ofertas — {tickerSelecionado}</h3>
+            <p>Ações disponíveis para venda: {state.available_positions[tickerSelecionado]}</p>
+            {[['Compras', book.buy_orders], ['Vendas', book.sell_orders]].map(([label, levels]) => (
+              <div key={label}>
+                <h4>{label}</h4>
+                {levels.length ? (
+                  <ul>
+                    {levels.map(level => <li key={level.price}>{level.quantity} × R$ {Number(level.price).toFixed(2)}</li>)}
+                  </ul>
+                ) : <p>Sem ofertas.</p>}
+              </div>
+            ))}
+          </section>
+        )}
+
         {/* Tabela de Ordens (Parte Inferior) */}
-        <div style={{ backgroundColor: '#ffffff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginTop: '20px' }}>
+        <div style={{ backgroundColor: '#ffffff', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', marginTop: '20px', overflowX: 'auto' }}>
           <h3 style={{ margin: '0 0 20px 0', color: '#0f172a' }}>Histórico de Ordens</h3>
           {ordens.length === 0 ? (
             <p style={{ color: '#94a3b8', textAlign: 'center', padding: '20px' }}>Nenhuma ordem enviada até o momento.</p>
@@ -360,7 +448,9 @@ function App() {
                   <th style={{ padding: '12px 8px' }}>Data/Hora</th>
                   <th style={{ padding: '12px 8px' }}>Ativo</th>
                   <th style={{ padding: '12px 8px' }}>Operação</th>
-                  <th style={{ padding: '12px 8px' }}>Qtd</th>
+                  <th style={{ padding: '12px 8px' }}>Solicitada</th>
+                  <th style={{ padding: '12px 8px' }}>Executada</th>
+                  <th style={{ padding: '12px 8px' }}>Restante</th>
                   <th style={{ padding: '12px 8px' }}>Preço</th>
                   <th style={{ padding: '12px 8px' }}>Status</th>
                 </tr>
@@ -377,9 +467,16 @@ function App() {
                       </span>
                     </td>
                     <td style={{ padding: '16px 8px' }}>{o.quantity}</td>
+                    <td style={{ padding: '16px 8px' }}>{o.quantity - (o.remaining_quantity ?? 0) - (o.cancelled_quantity ?? 0)}</td>
+                    <td style={{ padding: '16px 8px' }}>{o.remaining_quantity ?? 0}</td>
                     <td style={{ padding: '16px 8px', fontWeight: 'bold' }}>R$ {Number(o.price).toFixed(2)}</td>
                     <td style={{ padding: '16px 8px' }}>
-                      <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '13px' }}>{o.status === 'FILLED' ? 'Executada' : o.status}</span>
+                      <span style={{ fontWeight: 'bold', fontSize: '13px' }}>{orderStatuses[o.status] ?? o.status}</span>
+                      {o.remaining_quantity > 0 && (
+                        <div>
+                          <button type="button" disabled={busy} onClick={() => cancelOrder(o.order_id)}>Cancelar</button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -388,6 +485,20 @@ function App() {
           )}
         </div>
 
+        {state.trades && (
+          <section>
+            <h3>Minhas negociações</h3>
+            {state.trades.length ? (
+              <ul>
+                {state.trades.map(trade => (
+                  <li key={trade.trade_id}>
+                    {new Date(trade.created_at).toLocaleString('pt-BR')} · {trade.ticker} · {trade.quantity} × R$ {Number(trade.price).toFixed(2)}
+                  </li>
+                ))}
+              </ul>
+            ) : <p>Nenhuma negociação realizada.</p>}
+          </section>
+        )}
       </div>
     </div>
   );
