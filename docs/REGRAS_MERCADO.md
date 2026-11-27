@@ -189,6 +189,35 @@ Para repetir, rode `python backend/load_test.py --url http://127.0.0.1:8000`
 contra duas instâncias descartáveis, uma com e outra sem
 `BOLSA_MARKET_DB`. Mantenha os mesmos parâmetros e desative o NPC.
 
+### Repetição com ordem alternada
+
+Em 27/11/2026, a sequência memória → SQLite foi seguida por
+SQLite → memória, com um processo novo para cada modo e três rodadas por
+cenário. Um ensaio inicial foi interrompido a 100 clientes. As duas
+sequências completas usaram uma cópia temporária do cliente de carga com
+45 segundos de timeout HTTP em ambos os modos. Os 16 cenários completos
+passaram nas verificações de integridade. A CPU média é expressa em
+percentual de um núcleo lógico. O pico de memória residente foi amostrado
+a cada 250 ms no backend e seus processos filhos.
+
+| Clientes | Modo | p95 nas duas execuções | Ordens/s nas duas execuções | CPU média | Pico residente |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 5 | Memória | 62–163 ms | 20,44–52,17 | 5,2–5,6% | 73,5–93,5 MiB |
+| 5 | SQLite | 88–109 ms | 34,14–40,42 | 14,0–14,1% | 93,5–93,8 MiB |
+| 20 | Memória | 879–960 ms | 18,34–20,18 | 7,8–12,1% | 70,9–95,7 MiB |
+| 20 | SQLite | 580–796 ms | 22,22–31,42 | 16,8–22,3% | 96,8–97,1 MiB |
+| 50 | Memória | 2,20–4,93 s | 11,50–24,99 | 10,2–15,9% | 57,0–99,4 MiB |
+| 50 | SQLite | 2,06–2,41 s | 22,48–25,26 | 28,5–32,8% | 102,2–102,7 MiB |
+| 100 | Memória | 3,43–7,07 s | 14,42–29,08 | 11,8–13,0% | 50,9–90,8 MiB |
+| 100 | SQLite | 3,70–4,58 s | 22,65–24,98 | 37,7–39,9% | 104,4–114,7 MiB |
+
+A 100 clientes, o p95 em segundos foi 7,07 → 4,58 na sequência
+memória → SQLite e 3,70 → 3,43 na sequência inversa. A direção da
+diferença de latência variou, enquanto o SQLite consumiu mais CPU em
+todos os pares medidos. O teste verifica a recuperação e o comportamento
+sob carga local. Uma decisão de otimização exige novas repetições e
+medição em ambiente controlado.
+
 ## Limitações do protótipo
 
 As sessões atuais são identificadas por nome, sem comprovação de identidade. Os dados permanecem em memória e são perdidos quando o backend reinicia.
